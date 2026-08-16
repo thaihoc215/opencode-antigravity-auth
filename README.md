@@ -105,6 +105,91 @@ opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --varia
 
 ---
 
+## Local Development / Install From Source
+
+Use this setup when you want OpenCode to load a local checkout instead of the published npm package.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 20 or newer
+- OpenCode installed and available as `opencode`
+
+### 1. Clone and build
+
+```bash
+git clone https://github.com/NoeFabris/opencode-antigravity-auth.git
+cd opencode-antigravity-auth
+npm install
+npm run build
+```
+
+The build writes the plugin entry point to `dist/index.js`.
+
+### 2. Configure OpenCode
+
+Add the absolute path to `dist/index.js` to the `plugin` array in `~/.config/opencode/opencode.json`.
+
+**Windows:**
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "C:/path/to/opencode-antigravity-auth/dist/index.js"
+  ]
+}
+```
+
+**macOS/Linux:**
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "/absolute/path/to/opencode-antigravity-auth/dist/index.js"
+  ]
+}
+```
+
+Use either the local path or `opencode-antigravity-auth@latest`, not both, to avoid loading two copies of the plugin. Preserve any other plugins and configuration already present in the file.
+
+### 3. Restart and authenticate
+
+Quit all running OpenCode sessions, start OpenCode again, and then run:
+
+```bash
+opencode auth login
+```
+
+Run the command again to add more Google accounts.
+
+### 4. Verify the setup
+
+List the models registered for the Google provider:
+
+```bash
+opencode models google
+```
+
+Then send a test request:
+
+```bash
+opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --variant=max
+```
+
+### Rebuild after local changes
+
+After pulling updates or editing the source, rebuild and restart OpenCode so it loads the new output:
+
+```bash
+npm install  # Only needed when dependencies change
+npm run build
+```
+
+If OpenCode still behaves like an older build, see [Behavior doesn't match the version you just installed/built](docs/TROUBLESHOOTING.md#behavior-doesnt-match-the-version-you-just-installedbuilt).
+
+---
+
 ## Models
 
 ### Model Reference
@@ -117,6 +202,7 @@ opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --varia
 | `antigravity-gemini-3.1-pro` | low, high | Gemini 3.1 Pro with thinking (rollout-dependent) |
 | `antigravity-gemini-3-flash` | minimal, low, medium, high | Gemini 3 Flash with thinking |
 | `antigravity-gemini-3.5-flash` | minimal, low, medium, high | Gemini 3.5 Flash with thinking (rollout-dependent) |
+| `antigravity-gemini-3.6-flash` | low, medium, high | Gemini 3.6 Flash with thinking (no `minimal` tier) |
 | `antigravity-claude-sonnet-4-6` | — | Claude Sonnet 4.6 |
 | `antigravity-claude-opus-4-6-thinking` | low, max | Claude Opus 4.6 with extended thinking |
 
@@ -132,6 +218,7 @@ The official Antigravity SDK uses `GEMINI_API_KEY` for local Gemini access. This
 | `gemini-2.5-pro` | Gemini 2.5 Pro |
 | `gemini-3-flash-preview` | Gemini 3 Flash (preview) |
 | `gemini-3.5-flash` | Gemini 3.5 Flash (rollout-dependent) |
+| `gemini-3.6-flash` | Gemini 3.6 Flash (variants: low, medium, high) |
 | `gemini-3-pro-preview` | Gemini 3 Pro (preview) |
 | `gemini-3.1-pro` | Gemini 3.1 Pro |
 | `gemini-3.1-pro-preview-customtools` | Gemini 3.1 Pro Preview Custom Tools |
@@ -203,6 +290,16 @@ Add this to your `~/.config/opencode/opencode.json`:
             "high": { "thinkingLevel": "high" }
           }
         },
+        "antigravity-gemini-3.6-flash": {
+          "name": "Gemini 3.6 Flash (Antigravity)",
+          "limit": { "context": 1048576, "output": 65536 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "medium": { "thinkingLevel": "medium" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
         "antigravity-claude-sonnet-4-6": {
           "name": "Claude Sonnet 4.6 (Antigravity)",
           "limit": { "context": 200000, "output": 64000 },
@@ -236,6 +333,16 @@ Add this to your `~/.config/opencode/opencode.json`:
           "name": "Gemini 3.5 Flash (Gemini CLI)",
           "limit": { "context": 1048576, "output": 65536 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "gemini-3.6-flash": {
+          "name": "Gemini 3.6 Flash (Gemini CLI)",
+          "limit": { "context": 1048576, "output": 65536 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "medium": { "thinkingLevel": "medium" },
+            "high": { "thinkingLevel": "high" }
+          }
         },
         "gemini-3-pro-preview": {
           "name": "Gemini 3 Pro Preview (Gemini CLI)",

@@ -67,7 +67,7 @@ import {
 } from "./transform";
 import {
   resolveModelForHeaderStyle,
-  resolveAntigravityGemini35FlashBackendModel,
+  resolveAntigravityGeminiFlashBackendModel,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -1340,14 +1340,13 @@ export function prepareAntigravityRequest(
         }
 
         if (headerStyle === "antigravity") {
-          const gemini35FlashBackendModel =
-            resolveAntigravityGemini35FlashBackendModel(
-              effectiveModel,
-              tierThinkingLevel,
-            );
-          if (gemini35FlashBackendModel) {
-            effectiveModel = gemini35FlashBackendModel;
-            wrappedBody.model = gemini35FlashBackendModel;
+          const flashBackendModel = resolveAntigravityGeminiFlashBackendModel(
+            effectiveModel,
+            tierThinkingLevel,
+          );
+          if (flashBackendModel) {
+            effectiveModel = flashBackendModel;
+            wrappedBody.model = flashBackendModel;
           }
         }
 
@@ -1472,13 +1471,12 @@ export function prepareAntigravityRequest(
         }
 
         if (headerStyle === "antigravity") {
-          const gemini35FlashBackendModel =
-            resolveAntigravityGemini35FlashBackendModel(
-              effectiveModel,
-              tierThinkingLevel,
-            );
-          if (gemini35FlashBackendModel) {
-            effectiveModel = gemini35FlashBackendModel;
+          const flashBackendModel = resolveAntigravityGeminiFlashBackendModel(
+            effectiveModel,
+            tierThinkingLevel,
+          );
+          if (flashBackendModel) {
+            effectiveModel = flashBackendModel;
           }
         }
 

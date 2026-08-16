@@ -4324,6 +4324,7 @@ function getHeaderStyleFromUrl(
 }
 
 export const __testExports = {
+  isRemovedModelId,
   getHeaderStyleFromUrl,
   createSoftQuotaBlockedResponse,
   tryFetchWithAgySdkCredentials,

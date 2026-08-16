@@ -23,9 +23,11 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "antigravity-claude-sonnet-4-6",
       "antigravity-gemini-3.1-pro",
       "antigravity-gemini-3.5-flash",
+      "antigravity-gemini-3.6-flash",
       "gemini-3.1-pro",
       "gemini-3.1-pro-preview-customtools",
       "gemini-3.5-flash",
+      "gemini-3.6-flash",
     ]);
   });
 
@@ -41,6 +43,33 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       medium: { thinkingLevel: "medium" },
       high: { thinkingLevel: "high" },
     });
+  });
+
+  it("omits the minimal variant for Gemini 3.6 Flash, which does not serve it", () => {
+    expect(getModel("antigravity-gemini-3.6-flash").variants).toEqual({
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    });
+  });
+
+  it("exposes effort variants on the bare Gemini CLI 3.6 Flash id too", () => {
+    // Without variants OpenCode has nothing to put in providerOptions.google,
+    // so selecting an effort on `google/gemini-3.6-flash` would silently no-op.
+    expect(getModel("gemini-3.6-flash").variants).toEqual({
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    });
+  });
+
+  it("gives Gemini 3.6 Flash the documented context and output limits", () => {
+    for (const id of ["antigravity-gemini-3.6-flash", "gemini-3.6-flash"]) {
+      expect(getModel(id).limit, `id=${id}`).toEqual({
+        context: 1048576,
+        output: 65536,
+      });
+    }
   });
 
   it("defines thinking budget variants for Claude thinking models", () => {

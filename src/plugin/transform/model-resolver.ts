@@ -67,6 +67,9 @@ const GEMINI_35_FLASH_REGEX =
   /^gemini-3\.5-flash(?:-(minimal|low|medium|high))?$/i;
 const GEMINI_35_FLASH_LOW_MODEL = "gemini-3.5-flash-low";
 const GEMINI_35_FLASH_HIGH_MODEL = "gemini-3-flash-agent";
+const GEMINI_36_FLASH_REGEX =
+  /^gemini-3\.6-flash(?:-(minimal|low|medium|high))?$/i;
+const GEMINI_36_FLASH_BASE_MODEL = "gemini-3.6-flash";
 /**
  * Dotted-minor Gemini generations (gemini-3.1, gemini-3.5, ...) use BARE model
  * names on the Gemini CLI backend, unlike the legacy 3.0 line (gemini-3-pro) which
@@ -161,6 +164,66 @@ export function resolveAntigravityGemini35FlashBackendModel(
 }
 
 /**
+ * Gemini 3.6 Flash carries the effort level in the backend id itself
+ * (`gemini-3.6-flash-low` / `-medium` / `-high`), unlike the irregular 3.5 Flash
+ * mapping above where low and medium share one id and high is `gemini-3-flash-agent`.
+ *
+ * Already-resolved ids round-trip unchanged, so calling this on the output of a
+ * previous call is a no-op.
+ */
+export function resolveAntigravityGemini36FlashBackendModel(
+  model: string,
+  thinkingLevel?: string,
+): string | undefined {
+  const modelWithoutQuota = model.replace(QUOTA_PREFIX_REGEX, "");
+  const match = modelWithoutQuota.match(GEMINI_36_FLASH_REGEX);
+  if (!match) {
+    return undefined;
+  }
+
+  const level = (thinkingLevel ?? match[1] ?? "low").toLowerCase();
+  const effort = level === "high" || level === "medium" ? level : "low";
+  return `${GEMINI_36_FLASH_BASE_MODEL}-${effort}`;
+}
+
+/**
+ * Resolves the Antigravity backend id for any Gemini Flash generation that needs
+ * one, or `undefined` when the model is not a Flash id with a special mapping.
+ *
+ * Call this rather than the per-generation helpers wherever a backend id must be
+ * (re-)derived after the effective thinking level is known — the 3.6 mapping is
+ * effort-sensitive in the id itself, so skipping it silently downgrades effort.
+ */
+export function resolveAntigravityGeminiFlashBackendModel(
+  model: string,
+  thinkingLevel?: string,
+): string | undefined {
+  return (
+    resolveAntigravityGemini35FlashBackendModel(model, thinkingLevel) ??
+    resolveAntigravityGemini36FlashBackendModel(model, thinkingLevel)
+  );
+}
+
+/**
+ * Gemini 3.6 Flash serves only low/medium/high, while 3.5 Flash also serves
+ * `minimal`. A `minimal` request against 3.6 is folded to `low` so that neither
+ * the backend id nor the `thinkingLevel` parameter carries a level 3.6 rejects.
+ */
+function normalizeGemini36FlashTier(
+  model: string,
+  tier: ThinkingTier | undefined,
+): ThinkingTier | undefined {
+  // Keyed off the requested suffix rather than `tier`: TIER_REGEX matches
+  // `minimal`, but ThinkingTier only names low/medium/high, so a "minimal"
+  // tier reaches here as an unrepresentable value.
+  const bare = model.replace(QUOTA_PREFIX_REGEX, "");
+  if (!/-minimal$/i.test(bare)) {
+    return tier;
+  }
+  return GEMINI_36_FLASH_REGEX.test(bare) ? "low" : tier;
+}
+
+/**
  * Resolves a model name with optional tier suffix and quota prefix to its actual API model name
  * and corresponding thinking configuration.
  *
@@ -187,8 +250,9 @@ export function resolveModelWithTier(
   const isAntigravity = QUOTA_PREFIX_REGEX.test(requestedModel);
   const modelWithoutQuota = requestedModel.replace(QUOTA_PREFIX_REGEX, "");
 
-  const tier = extractThinkingTierFromModel(modelWithoutQuota);
-  const baseName = tier
+  const requestedTier = extractThinkingTierFromModel(modelWithoutQuota);
+  const tier = normalizeGemini36FlashTier(modelWithoutQuota, requestedTier);
+  const baseName = requestedTier
     ? modelWithoutQuota.replace(TIER_REGEX, "")
     : modelWithoutQuota;
 
@@ -222,8 +286,12 @@ export function resolveModelWithTier(
   if (skipAlias) {
     const gemini35FlashBackendModel =
       resolveAntigravityGemini35FlashBackendModel(modelWithoutQuota, tier);
+    const gemini36FlashBackendModel =
+      resolveAntigravityGemini36FlashBackendModel(modelWithoutQuota, tier);
     if (gemini35FlashBackendModel) {
       antigravityModel = gemini35FlashBackendModel;
+    } else if (gemini36FlashBackendModel) {
+      antigravityModel = gemini36FlashBackendModel;
     } else if (isGemini3Pro && !tier && !isImageModel) {
       antigravityModel = `${modelWithoutQuota}-low`;
     } else if (isGemini3Flash && tier) {
@@ -489,14 +557,21 @@ export function resolveModelWithVariant(
 
   if (isGemini3) {
     const level = budgetToGemini3Level(budget);
+    const isAntigravity = base.quotaPreference === "antigravity";
     const isAntigravityGemini3Pro =
-      base.quotaPreference === "antigravity" &&
-      isGemini3ProModel(base.actualModel);
+      isAntigravity && isGemini3ProModel(base.actualModel);
 
     let actualModel = base.actualModel;
     if (isAntigravityGemini3Pro) {
       const baseModel = base.actualModel.replace(/-(low|medium|high)$/, "");
       actualModel = `${baseModel}-${level}`;
+    } else if (isAntigravity) {
+      // Flash generations that encode effort in the backend id (3.6+) must move
+      // the id with the variant; 3.5 keeps its shared id and carries effort in
+      // the thinkingLevel param, so this is a no-op there.
+      actualModel =
+        resolveAntigravityGeminiFlashBackendModel(base.actualModel, level) ??
+        actualModel;
     }
 
     return {
