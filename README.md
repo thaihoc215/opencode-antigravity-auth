@@ -203,6 +203,7 @@ If OpenCode still behaves like an older build, see [Behavior doesn't match the v
 | `antigravity-gemini-3-flash` | minimal, low, medium, high | Gemini 3 Flash with thinking |
 | `antigravity-gemini-3.5-flash` | minimal, low, medium, high | Gemini 3.5 Flash with thinking (rollout-dependent) |
 | `antigravity-gemini-3.6-flash` | low, medium, high | Gemini 3.6 Flash with thinking (no `minimal` tier) |
+| `antigravity-gemini-3.7-flash` | low, medium, high | Gemini 3.7 Flash — defaults to `high`, no sampling params; needs client version >= 2.5.2 |
 | `antigravity-claude-sonnet-4-6` | — | Claude Sonnet 4.6 |
 | `antigravity-claude-opus-4-6-thinking` | low, max | Claude Opus 4.6 with extended thinking |
 
@@ -219,6 +220,7 @@ The official Antigravity SDK uses `GEMINI_API_KEY` for local Gemini access. This
 | `gemini-3-flash-preview` | Gemini 3 Flash (preview) |
 | `gemini-3.5-flash` | Gemini 3.5 Flash (rollout-dependent) |
 | `gemini-3.6-flash` | Gemini 3.6 Flash (variants: low, medium, high) |
+| `gemini-3.7-flash` | Gemini 3.7 Flash (variants: low, medium, high; defaults to high) |
 | `gemini-3-pro-preview` | Gemini 3 Pro (preview) |
 | `gemini-3.1-pro` | Gemini 3.1 Pro |
 | `gemini-3.1-pro-preview-customtools` | Gemini 3.1 Pro Preview Custom Tools |
@@ -300,6 +302,19 @@ Add this to your `~/.config/opencode/opencode.json`:
             "high": { "thinkingLevel": "high" }
           }
         },
+        "antigravity-gemini-3.7-flash": {
+          "name": "Gemini 3.7 Flash (Antigravity)",
+          "limit": { "context": 1048576, "output": 65536 },
+          "modalities": {
+            "input": ["text", "image", "pdf", "video", "audio"],
+            "output": ["text"]
+          },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "medium": { "thinkingLevel": "medium" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
         "antigravity-claude-sonnet-4-6": {
           "name": "Claude Sonnet 4.6 (Antigravity)",
           "limit": { "context": 200000, "output": 64000 },
@@ -338,6 +353,19 @@ Add this to your `~/.config/opencode/opencode.json`:
           "name": "Gemini 3.6 Flash (Gemini CLI)",
           "limit": { "context": 1048576, "output": 65536 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "medium": { "thinkingLevel": "medium" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
+        "gemini-3.7-flash": {
+          "name": "Gemini 3.7 Flash (Gemini CLI)",
+          "limit": { "context": 1048576, "output": 65536 },
+          "modalities": {
+            "input": ["text", "image", "pdf", "video", "audio"],
+            "output": ["text"]
+          },
           "variants": {
             "low": { "thinkingLevel": "low" },
             "medium": { "thinkingLevel": "medium" },

@@ -68,6 +68,10 @@ import {
 import {
   resolveModelForHeaderStyle,
   resolveAntigravityGeminiFlashBackendModel,
+  modelDropsSamplingParams,
+  geminiMaxOutputTokens,
+  OPENCODE_OUTPUT_TOKEN_CAP,
+  REMOVED_SAMPLING_PARAMS,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -1040,6 +1044,62 @@ function ensureDefaultGemini3ThinkingLevel(
   requestPayload.generationConfig = generationConfig;
 }
 
+/**
+ * Gemini 3.7 removed `temperature`/`topP`/`topK`; leaving any of them on the
+ * payload is a 400 rather than a silently ignored field. OpenCode advertises
+ * temperature support provider-wide, so the value can arrive here even when the
+ * user never set one — strip it as late as possible, once the effective model
+ * (and therefore the generation) is known.
+ */
+function stripUnsupportedSamplingParams(
+  requestPayload: Record<string, unknown>,
+  effectiveModel: string,
+): void {
+  if (!modelDropsSamplingParams(effectiveModel)) {
+    return;
+  }
+
+  const generationConfig = requestPayload.generationConfig;
+  if (!generationConfig || typeof generationConfig !== "object") {
+    return;
+  }
+
+  for (const param of REMOVED_SAMPLING_PARAMS) {
+    delete (generationConfig as Record<string, unknown>)[param];
+  }
+}
+
+/**
+ * Restores a Gemini request's output budget to what the model actually allows.
+ *
+ * OpenCode caps every request at `Math.min(model.limit.output, 32000)`, so
+ * Gemini models that permit 65536/65535 are asked for barely half of it and
+ * long responses truncate early. Declaring a higher `limit.output` cannot fix
+ * this — the cap is a `Math.min` on OpenCode's side.
+ *
+ * Only an exact match on the cap is rewritten: a caller that deliberately asked
+ * for a short response keeps its value.
+ */
+function restoreGeminiMaxOutputTokens(
+  requestPayload: Record<string, unknown>,
+  effectiveModel: string,
+): void {
+  const limit = geminiMaxOutputTokens(effectiveModel);
+  if (limit === undefined) {
+    return;
+  }
+
+  const generationConfig = requestPayload.generationConfig;
+  if (!generationConfig || typeof generationConfig !== "object") {
+    return;
+  }
+
+  const config = generationConfig as Record<string, unknown>;
+  if (config.maxOutputTokens === OPENCODE_OUTPUT_TOKEN_CAP) {
+    config.maxOutputTokens = limit;
+  }
+}
+
 const STREAM_ACTION = "streamGenerateContent";
 
 interface RequestInitWithDuplex extends RequestInit {
@@ -1381,6 +1441,14 @@ export function prepareAntigravityRequest(
             effectiveModel,
             tierThinkingLevel,
           );
+          stripUnsupportedSamplingParams(
+            req as Record<string, unknown>,
+            effectiveModel,
+          );
+          restoreGeminiMaxOutputTokens(
+            req as Record<string, unknown>,
+            effectiveModel,
+          );
 
           if (isClaude) {
             // Steps 0-2: cross-model strip, thinking-block filtering, cache_control,
@@ -1673,6 +1741,11 @@ export function prepareAntigravityRequest(
         }
         delete requestPayload.thinkingConfig;
         delete requestPayload.thinking;
+
+        // After generationConfig has settled: 3.7+ rejects the sampling params,
+        // and OpenCode's 32000 ceiling needs lifting back to the real limit.
+        stripUnsupportedSamplingParams(requestPayload, effectiveModel);
+        restoreGeminiMaxOutputTokens(requestPayload, effectiveModel);
 
         if ("system_instruction" in requestPayload) {
           requestPayload.systemInstruction = requestPayload.system_instruction;
@@ -2638,6 +2711,8 @@ export const __testExports = {
   ensureThinkingBeforeToolUseInContents,
   ensureThinkingBeforeToolUseInMessages,
   sanitizeRequestPayloadForAntigravity,
+  stripUnsupportedSamplingParams,
+  restoreGeminiMaxOutputTokens,
   signatureCacheProjectKey,
   generateSyntheticProjectId,
   getDisplayedThinkingHashes,

@@ -24,10 +24,12 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "antigravity-gemini-3.1-pro",
       "antigravity-gemini-3.5-flash",
       "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.7-flash",
       "gemini-3.1-pro",
       "gemini-3.1-pro-preview-customtools",
       "gemini-3.5-flash",
       "gemini-3.6-flash",
+      "gemini-3.7-flash",
     ]);
   });
 
@@ -69,6 +71,36 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
         context: 1048576,
         output: 65536,
       });
+    }
+  });
+
+  it("omits the minimal variant for Gemini 3.7 Flash, which does not serve it", () => {
+    for (const id of ["antigravity-gemini-3.7-flash", "gemini-3.7-flash"]) {
+      expect(getModel(id).variants, `id=${id}`).toEqual({
+        low: { thinkingLevel: "low" },
+        medium: { thinkingLevel: "medium" },
+        high: { thinkingLevel: "high" },
+      });
+    }
+  });
+
+  it("gives Gemini 3.7 Flash the documented context and output limits", () => {
+    for (const id of ["antigravity-gemini-3.7-flash", "gemini-3.7-flash"]) {
+      expect(getModel(id).limit, `id=${id}`).toEqual({
+        context: 1048576,
+        output: 65536,
+      });
+    }
+  });
+
+  it("accepts video and audio input on Gemini 3.7 Flash", () => {
+    // 3.7 documents Text/Image/Video/Audio/PDF input, wider than DEFAULT_MODALITIES.
+    // Without these, OpenCode refuses to attach video/audio the backend accepts.
+    for (const id of ["antigravity-gemini-3.7-flash", "gemini-3.7-flash"]) {
+      const input = getModel(id).modalities.input;
+      expect(input, `id=${id}`).toEqual(
+        expect.arrayContaining(["text", "image", "pdf", "video", "audio"]),
+      );
     }
   });
 

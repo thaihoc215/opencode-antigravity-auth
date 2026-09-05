@@ -33,7 +33,10 @@ import {
   prepareAntigravityRequest,
   transformAntigravityResponse,
 } from "./plugin/request";
-import { resolveModelWithTier } from "./plugin/transform/model-resolver";
+import {
+  resolveModelWithTier,
+  modelDropsSamplingParams,
+} from "./plugin/transform/model-resolver";
 import {
   isEmptyResponseBody,
   createSyntheticErrorResponse,
@@ -248,7 +251,11 @@ function hasProviderModelRuntimeShape(model: ProviderModel | undefined): boolean
     && model.capabilities !== null;
 }
 
-function modalitiesToCapabilities(model: ProviderModel, existing: ProviderModel | undefined): Record<string, unknown> {
+function modalitiesToCapabilities(
+  model: ProviderModel,
+  existing: ProviderModel | undefined,
+  modelId?: string,
+): Record<string, unknown> {
   const modalities = model.modalities as { input?: string[]; output?: string[] } | undefined;
   const existingCapabilities = existing?.capabilities as Record<string, unknown> | undefined;
   const existingInput = existingCapabilities?.input as Record<string, unknown> | undefined;
@@ -257,8 +264,13 @@ function modalitiesToCapabilities(model: ProviderModel, existing: ProviderModel 
   const input = modalities?.input ?? [];
   const output = modalities?.output ?? [];
 
+  // Gemini 3.7+ removed temperature/topP/topK — advertising them would invite
+  // OpenCode to send a value the API rejects. The request pipeline strips them
+  // as a backstop; this keeps the UI honest.
+  const supportsTemperature = !(modelId && modelDropsSamplingParams(modelId));
+
   return {
-    temperature: existingCapabilities?.temperature ?? true,
+    temperature: existingCapabilities?.temperature ?? supportsTemperature,
     reasoning: existingCapabilities?.reasoning ?? !!model.variants,
     attachment: existingCapabilities?.attachment ?? (input.includes("image") || input.includes("pdf")),
     toolcall: existingCapabilities?.toolcall ?? true,
@@ -356,7 +368,7 @@ function normalizeProviderHookModels(
         input: limit?.input ?? existingLimit?.input,
         output: limit?.output ?? existingLimit?.output ?? 0,
       },
-      capabilities: modalitiesToCapabilities(model, existing),
+      capabilities: modalitiesToCapabilities(model, existing, id),
       release_date: existing?.release_date ?? model.release_date ?? "",
     };
   }
@@ -4325,6 +4337,7 @@ function getHeaderStyleFromUrl(
 
 export const __testExports = {
   isRemovedModelId,
+  modalitiesToCapabilities,
   getHeaderStyleFromUrl,
   createSoftQuotaBlockedResponse,
   tryFetchWithAgySdkCredentials,

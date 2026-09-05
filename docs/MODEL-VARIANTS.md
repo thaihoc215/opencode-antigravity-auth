@@ -50,15 +50,55 @@ The plugin accepts different variant formats depending on the model family:
 
 Gemini 3 models use string-based thinking levels. Available levels differ by model:
 
-| Level | Flash | 3.6 Flash | Pro | Description |
-|-------|-------|-----------|-----|-------------|
-| `minimal` | ✅ | ❌ | ❌ | Minimal thinking, lowest latency |
-| `low` | ✅ | ✅ | ✅ | Light thinking |
-| `medium` | ✅ | ✅ | ❌ | Balanced thinking |
-| `high` | ✅ | ✅ | ✅ | Maximum thinking (default) |
+| Level | Flash | 3.6 Flash | 3.7 Flash | Pro | Description |
+|-------|-------|-----------|-----------|-----|-------------|
+| `minimal` | ✅ | ❌ | ❌ | ❌ | Minimal thinking, lowest latency |
+| `low` | ✅ | ✅ | ✅ | ✅ | Light thinking |
+| `medium` | ✅ | ✅ | ✅ | ❌ | Balanced thinking |
+| `high` | ✅ | ✅ | ✅ | ✅ | Maximum thinking |
+
+Default when no tier is requested: `low`, except **3.7 Flash, which defaults to
+`high`**. (Google documents `medium` as 3.7's own default; this plugin ships
+`high` so an untiered selection gets maximum thinking.)
+
+> **Gemini 3.7 requires an Antigravity client version >= 2.5.2.** The backend
+> gates its catalog on the version in the User-Agent — a client reporting an
+> older version is simply not served the `gemini-3.7-flash-*` ids. The plugin
+> floors its reported version at the latest release, so this is handled
+> automatically; it only matters if you override the version yourself.
 
 > **Note:** The API rejects invalid levels (e.g., `"minimal"` on Pro). Configure variants accordingly.
-> Gemini 3.6 Flash serves only `low`/`medium`/`high`; a requested `minimal` is folded down to `low`.
+> Gemini 3.6 and 3.7 Flash serve only `low`/`medium`/`high`; a requested `minimal` is folded down to `low`.
+
+### Output token budget
+
+OpenCode caps every request at `Math.min(model.limit.output, 32000)`. Declaring a
+higher `limit.output` in your config does **not** raise it — the cap is applied
+after the provider hook, so 65536 and 32000 send the same request.
+
+The plugin restores the real budget for Gemini before the request leaves:
+
+| Model line | Restored `maxOutputTokens` |
+|---|---|
+| Gemini 3 Flash (3-flash, 3.5, 3.6, 3.7) | 65536 |
+| Gemini 3 Pro (3.1 Pro, `gemini-pro-agent`) | 65535 |
+| Gemini 3.1 Flash Lite, Gemini 2.5 family | 65535 |
+| Image models, Claude, non-Gemini | untouched |
+
+Only a budget equal to the cap exactly is rewritten, so setting a deliberately
+small `maxOutputTokens` still works.
+
+### Gemini 3.7 Flash: no sampling parameters
+
+Gemini 3.7 **removed** `temperature`, `topP` and `topK` — sending any of them is a
+400, not a silently ignored field. (3.6 only deprecated them and still accepts.)
+The plugin handles this in two places, so no configuration is needed:
+
+- `temperature` is advertised as unsupported for 3.7 ids, so OpenCode does not offer it.
+- The request pipeline strips all three from `generationConfig` before the request
+  leaves, as a backstop against values arriving from config or a raw request.
+
+Use `thinkingLevel` to control 3.7's behaviour instead.
 
 ### Gemini 3.6 Flash Example
 
@@ -73,6 +113,30 @@ resolver handles that translation — configure it with plain variants:
     "name": "Gemini 3.6 Flash (Antigravity)",
     "limit": { "context": 1048576, "output": 65536 },
     "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+    "variants": {
+      "low": { "thinkingLevel": "low" },
+      "medium": { "thinkingLevel": "medium" },
+      "high": { "thinkingLevel": "high" }
+    }
+  }
+}
+```
+
+### Gemini 3.7 Flash Example
+
+3.7 Flash follows the same effort-in-the-id scheme as 3.6
+(`gemini-3.7-flash-low` / `-medium` / `-high`), and additionally accepts video and
+audio input:
+
+```json
+{
+  "antigravity-gemini-3.7-flash": {
+    "name": "Gemini 3.7 Flash (Antigravity)",
+    "limit": { "context": 1048576, "output": 65536 },
+    "modalities": {
+      "input": ["text", "image", "pdf", "video", "audio"],
+      "output": ["text"]
+    },
     "variants": {
       "low": { "thinkingLevel": "low" },
       "medium": { "thinkingLevel": "medium" },

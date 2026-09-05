@@ -70,7 +70,16 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "1.18.3";
+/**
+ * Latest released Antigravity version, and the floor this plugin reports.
+ *
+ * The backend gates its model catalog on the client version in the User-Agent:
+ * a client reporting < 2.5.2 is served 24 models, >= 2.5.2 is served 27 —
+ * the extra three being `gemini-3.7-flash-{low,medium,high}` (verified
+ * 2026-08-17 against `v1internal:fetchAvailableModels`). Reporting a stale
+ * version therefore silently hides models the account is entitled to.
+ */
+export const ANTIGRAVITY_VERSION_FALLBACK = "2.8.1";
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 let versionLocked = false;
 

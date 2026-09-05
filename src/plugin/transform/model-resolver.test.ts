@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveModelWithTier,
   resolveModelWithVariant,
+  geminiMaxOutputTokens,
   resolveModelForHeaderStyle,
 } from "./model-resolver";
 
@@ -131,6 +132,15 @@ describe("resolveModelWithTier", () => {
         "agy-sdk",
       );
       expect(result.actualModel).toBe("gemini-3.6-flash");
+      expect(result.quotaPreference).toBe("agy-sdk");
+    });
+
+    it("strips the Antigravity tier suffix off gemini-3.7-flash for the public API", () => {
+      const result = resolveModelForHeaderStyle(
+        "antigravity-gemini-3.7-flash-high",
+        "agy-sdk",
+      );
+      expect(result.actualModel).toBe("gemini-3.7-flash");
       expect(result.quotaPreference).toBe("agy-sdk");
     });
   });
@@ -272,6 +282,58 @@ describe("resolveModelWithTier", () => {
     });
   });
 
+  describe("Gemini 3.7 Flash Antigravity backend ids", () => {
+    it("antigravity-gemini-3.7-flash defaults to the high backend id", () => {
+      // 3.7 Flash defaults to maximum thinking, matching this plugin's stated
+      // convention that `high` is the default tier.
+      const result = resolveModelWithTier("antigravity-gemini-3.7-flash");
+      expect(result.actualModel).toBe("gemini-3.7-flash-high");
+      expect(result.thinkingLevel).toBe("high");
+    });
+
+    it("antigravity-gemini-3.7-flash-low maps to its own low backend id", () => {
+      const result = resolveModelWithTier("antigravity-gemini-3.7-flash-low");
+      expect(result.actualModel).toBe("gemini-3.7-flash-low");
+      expect(result.thinkingLevel).toBe("low");
+    });
+
+    it("antigravity-gemini-3.7-flash-high maps to its own high backend id", () => {
+      const result = resolveModelWithTier("antigravity-gemini-3.7-flash-high");
+      expect(result.actualModel).toBe("gemini-3.7-flash-high");
+      expect(result.thinkingLevel).toBe("high");
+    });
+
+    it("folds the unsupported minimal tier down to low", () => {
+      const result = resolveModelWithTier(
+        "antigravity-gemini-3.7-flash-minimal",
+      );
+      expect(result.actualModel).toBe("gemini-3.7-flash-low");
+      expect(result.thinkingLevel).toBe("low");
+    });
+
+    it("leaves an already-resolved backend id unchanged", () => {
+      const result = resolveModelWithTier("antigravity-gemini-3.7-flash-medium");
+      expect(result.actualModel).toBe("gemini-3.7-flash-medium");
+      expect(result.thinkingLevel).toBe("medium");
+    });
+
+    it("keeps bare gemini-3.7-flash bare with default high thinking", () => {
+      const result = resolveModelWithTier("gemini-3.7-flash");
+      expect(result.actualModel).toBe("gemini-3.7-flash");
+      expect(result.thinkingLevel).toBe("high");
+      expect(result.quotaPreference).toBe("antigravity");
+    });
+
+    it("does not disturb the 3.6 or 3.5 Flash backend mappings", () => {
+      expect(
+        resolveModelWithTier("antigravity-gemini-3.6-flash").actualModel,
+      ).toBe("gemini-3.6-flash-low");
+      expect(
+        resolveModelWithTier("antigravity-gemini-3.5-flash-high").actualModel,
+      ).toBe("gemini-3-flash-agent");
+    });
+  });
+
   describe("Claude thinking models default budget", () => {
     it("antigravity-claude-opus-4-6-thinking gets default max budget (32768)", () => {
       const result = resolveModelWithTier(
@@ -404,6 +466,24 @@ describe("resolveModelWithVariant", () => {
       );
       expect(result.actualModel).toBe("gemini-3.6-flash-medium");
       expect(result.thinkingLevel).toBe("medium");
+    });
+
+    it("rewrites the 3.7 Flash backend id to match the variant effort", () => {
+      const result = resolveModelWithVariant("antigravity-gemini-3.7-flash", {
+        thinkingBudget: 32000,
+      });
+      expect(result.actualModel).toBe("gemini-3.7-flash-high");
+      expect(result.thinkingLevel).toBe("high");
+      expect(result.configSource).toBe("variant");
+    });
+
+    it("rewrites the 3.7 Flash backend id downward too", () => {
+      const result = resolveModelWithVariant(
+        "antigravity-gemini-3.7-flash-high",
+        { thinkingBudget: 4096 },
+      );
+      expect(result.actualModel).toBe("gemini-3.7-flash-low");
+      expect(result.thinkingLevel).toBe("low");
     });
 
     it("leaves the 3.5 Flash backend id on its shared low id", () => {
@@ -645,5 +725,50 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
       );
       expect(result.actualModel).toBe("claude-opus-4-6-thinking");
     });
+  });
+});
+
+describe("geminiMaxOutputTokens", () => {
+  it("reports 65536 for the Gemini 3 Flash line", () => {
+    // Values taken from the live Antigravity catalog (fetchAvailableModels),
+    // not guessed: the Flash ids report 65536 while the Pro ids report 65535.
+    for (const model of [
+      "gemini-3.7-flash-high",
+      "gemini-3.7-flash-low",
+      "gemini-3.6-flash-medium",
+      "gemini-3.5-flash-low",
+      "gemini-3.5-flash-extra-low",
+      "gemini-3-flash-agent",
+      "gemini-3-flash",
+    ]) {
+      expect(geminiMaxOutputTokens(model), `model=${model}`).toBe(65536);
+    }
+  });
+
+  it("reports 65535 for the Gemini 3 Pro line and its agent alias", () => {
+    for (const model of ["gemini-3.1-pro-low", "gemini-3.1-pro-high", "gemini-pro-agent"]) {
+      expect(geminiMaxOutputTokens(model), `model=${model}`).toBe(65535);
+    }
+  });
+
+  it("reports 65535 for the 3.1 Flash Lite and 2.5 families", () => {
+    for (const model of ["gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash-thinking"]) {
+      expect(geminiMaxOutputTokens(model), `model=${model}`).toBe(65535);
+    }
+  });
+
+  it("strips the antigravity prefix before matching", () => {
+    expect(geminiMaxOutputTokens("antigravity-gemini-3.7-flash-high")).toBe(65536);
+  });
+
+  it("returns undefined for image models, which report no output limit", () => {
+    expect(geminiMaxOutputTokens("gemini-3.1-flash-image")).toBeUndefined();
+    expect(geminiMaxOutputTokens("gemini-3-pro-image")).toBeUndefined();
+  });
+
+  it("returns undefined for non-Gemini models", () => {
+    for (const model of ["claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"]) {
+      expect(geminiMaxOutputTokens(model), `model=${model}`).toBeUndefined();
+    }
   });
 });

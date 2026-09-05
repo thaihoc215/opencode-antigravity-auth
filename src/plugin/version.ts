@@ -28,6 +28,17 @@ function parseVersion(text: string): string | null {
   return match ? match[0] : null;
 }
 
+/** Numeric semver compare: negative if a < b, positive if a > b, 0 if equal. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 async function tryFetchVersion(url: string, maxChars?: number): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -70,6 +81,16 @@ export async function initAntigravityVersion(): Promise<void> {
       log.info("version-fetch-failed", { fallback });
       return;
     }
+  }
+
+  // Never report older than the hardcoded floor. The auto-updater endpoint
+  // serves a pinned "Fixed Version" that trails the real releases, and the
+  // backend gates its model catalog on the reported version — taking a stale
+  // value verbatim silently hides models the account is entitled to.
+  if (compareVersions(version, fallback) < 0) {
+    log.info("version-floored", { reported: version, source, using: fallback });
+    setAntigravityVersion(fallback);
+    return;
   }
 
   if (version !== fallback) {

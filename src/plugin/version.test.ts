@@ -34,6 +34,19 @@ describe("ANTIGRAVITY_VERSION_FALLBACK", () => {
     expect(major).toBeGreaterThanOrEqual(1)
     if (major === 1) expect(minor).toBeGreaterThanOrEqual(18)
   })
+
+  it("is at least 2.5.2, the version gate for Gemini 3.7 Flash", async () => {
+    // Verified 2026-08-17 against v1internal:fetchAvailableModels: a client
+    // reporting 2.5.0 is served 24 models, 2.5.2 is served 27 including
+    // gemini-3.7-flash-{low,medium,high}. Same accounts, same tokens.
+    const { getAntigravityVersion } = await import("../constants.ts")
+    const [major, minor, patch] = getAntigravityVersion().split(".").map(Number)
+    expect(major).toBeGreaterThanOrEqual(2)
+    if (major === 2) {
+      expect(minor).toBeGreaterThanOrEqual(5)
+      if (minor === 5) expect(patch).toBeGreaterThanOrEqual(2)
+    }
+  })
 })
 
 describe("setAntigravityVersion", () => {
@@ -75,17 +88,36 @@ describe("initAntigravityVersion — network failure path", () => {
     expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
   })
 
-  it("uses API version when auto-updater responds", async () => {
+  it("uses API version when the auto-updater reports a newer one", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: true, text: async () => "1.19.0" }),
+      vi.fn().mockResolvedValue({ ok: true, text: async () => "9.19.0" }),
     )
 
     const { getAntigravityVersion } = await import("../constants.ts")
     const { initAntigravityVersion } = await import("./version.ts")
     await initAntigravityVersion()
 
-    expect(getAntigravityVersion()).toBe("1.19.0")
+    expect(getAntigravityVersion()).toBe("9.19.0")
+  })
+
+  it("never downgrades below the hardcoded floor when a source is stale", async () => {
+    // The auto-updater endpoint serves a pinned "Fixed Version: 2.0.6" that
+    // trails the real Antigravity releases. Taking it verbatim silently drops
+    // the client below the 2.5.2 gate and hides Gemini 3.7 Flash.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => "Auto updater is running. Fixed Version: 2.0.6",
+      }),
+    )
+
+    const { ANTIGRAVITY_VERSION_FALLBACK, getAntigravityVersion } = await import("../constants.ts")
+    const { initAntigravityVersion } = await import("./version.ts")
+    await initAntigravityVersion()
+
+    expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
   })
 
   it("fallback version appears in User-Agent header", async () => {
