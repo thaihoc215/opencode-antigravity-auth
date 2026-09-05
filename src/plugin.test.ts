@@ -1180,3 +1180,24 @@ describe("createAntigravityPlugin capacity-exhaustion header-style fallback (rev
     await runCapacitySdkRetryableRotation(500, "Internal server error");
   }, 20_000);
 });
+
+describe("isRemovedModelId", () => {
+  it("does not filter out the Gemini 3.6 Flash ids", async () => {
+    const { __testExports } = await import("./plugin");
+    for (const id of [
+      "gemini-3.6-flash",
+      "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.6-flash-high",
+      "gemini-3.6-flash-medium",
+    ]) {
+      expect(__testExports.isRemovedModelId(id), `id=${id}`).toBe(false);
+    }
+  });
+
+  it("still filters the removed Gemini families", async () => {
+    const { __testExports } = await import("./plugin");
+    for (const id of ["gemini-2.5-pro", "gemini-3-pro", "gemini-3-flash", "gemini-3.1-flash-lite"]) {
+      expect(__testExports.isRemovedModelId(id), `id=${id}`).toBe(true);
+    }
+  });
+});

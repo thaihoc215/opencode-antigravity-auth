@@ -184,3 +184,27 @@ describe("mapWithConcurrency", () => {
     expect(results).toEqual([]);
   });
 });
+
+describe("Gemini CLI quota bucket filtering", () => {
+  const buckets = [
+    { modelId: "gemini-3.5-flash", remainingFraction: 0.5, resetTime: "2026-08-17T00:00:00Z" },
+    { modelId: "gemini-3.6-flash", remainingFraction: 0.9, resetTime: "2026-08-17T00:00:00Z" },
+    { modelId: "gemini-3.1-pro", remainingFraction: 0.2, resetTime: "2026-08-17T00:00:00Z" },
+    { modelId: "gemini-2.0-flash", remainingFraction: 1, resetTime: "2026-08-17T00:00:00Z" },
+  ];
+
+  it("surfaces Gemini 3.6 Flash alongside the other kept models", () => {
+    const summary = __testExports.aggregateGeminiCliQuota({ buckets });
+    expect(summary.models.map((model) => model.modelId)).toEqual([
+      "gemini-3.1-pro",
+      "gemini-3.5-flash",
+      "gemini-3.6-flash",
+    ]);
+  });
+
+  it("keeps the remaining fraction attached to the 3.6 Flash bucket", () => {
+    const summary = __testExports.aggregateGeminiCliQuota({ buckets });
+    const flash36 = summary.models.find((model) => model.modelId === "gemini-3.6-flash");
+    expect(flash36?.remainingFraction).toBe(0.9);
+  });
+});

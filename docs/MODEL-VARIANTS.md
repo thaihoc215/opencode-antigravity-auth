@@ -50,14 +50,37 @@ The plugin accepts different variant formats depending on the model family:
 
 Gemini 3 models use string-based thinking levels. Available levels differ by model:
 
-| Level | Flash | Pro | Description |
-|-------|-------|-----|-------------|
-| `minimal` | ✅ | ❌ | Minimal thinking, lowest latency |
-| `low` | ✅ | ✅ | Light thinking |
-| `medium` | ✅ | ❌ | Balanced thinking |
-| `high` | ✅ | ✅ | Maximum thinking (default) |
+| Level | Flash | 3.6 Flash | Pro | Description |
+|-------|-------|-----------|-----|-------------|
+| `minimal` | ✅ | ❌ | ❌ | Minimal thinking, lowest latency |
+| `low` | ✅ | ✅ | ✅ | Light thinking |
+| `medium` | ✅ | ✅ | ❌ | Balanced thinking |
+| `high` | ✅ | ✅ | ✅ | Maximum thinking (default) |
 
 > **Note:** The API rejects invalid levels (e.g., `"minimal"` on Pro). Configure variants accordingly.
+> Gemini 3.6 Flash serves only `low`/`medium`/`high`; a requested `minimal` is folded down to `low`.
+
+### Gemini 3.6 Flash Example
+
+Gemini 3.6 Flash carries the effort level in the Antigravity backend id itself
+(`gemini-3.6-flash-low` / `-medium` / `-high`), unlike 3.5 Flash where `low` and
+`medium` share one backend id and `high` maps to `gemini-3-flash-agent`. The
+resolver handles that translation — configure it with plain variants:
+
+```json
+{
+  "antigravity-gemini-3.6-flash": {
+    "name": "Gemini 3.6 Flash (Antigravity)",
+    "limit": { "context": 1048576, "output": 65536 },
+    "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+    "variants": {
+      "low": { "thinkingLevel": "low" },
+      "medium": { "thinkingLevel": "medium" },
+      "high": { "thinkingLevel": "high" }
+    }
+  }
+}
+```
 
 ### Gemini 3 Pro Example
 

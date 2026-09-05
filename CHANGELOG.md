@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Gemini 3.6 Flash** - Added `gemini-3.6-flash` across both quota pools: Antigravity (`antigravity-gemini-3.6-flash`) and Gemini CLI (bare `gemini-3.6-flash`). Exposes `low`/`medium`/`high` thinking levels — 3.6 does not serve `minimal`, so a requested `minimal` is folded down to `low`. Unlike 3.5 Flash (where `low`/`medium` share the `gemini-3.5-flash-low` backend id and `high` maps to `gemini-3-flash-agent`), 3.6 Flash uses one Antigravity runtime id per effort level: `gemini-3.6-flash-low` / `-medium` / `-high`. The public Gemini API and Gemini CLI paths both serve it bare, so api-key fallback strips the tier suffix. Because the effort lives in the id, selecting a variant re-derives the backend id (`resolveAntigravityGeminiFlashBackendModel`) at every point the id is resolved — otherwise a `high` variant would be sent to the `-low` backend and silently run at low effort. Both the Antigravity and bare Gemini CLI ids expose `low`/`medium`/`high` variants. Gemini 3.5 Flash is unchanged and remains available.
+
 - **Gemini 3.5 Flash** - Added `gemini-3.5-flash` across both quota pools: Antigravity (`antigravity-gemini-3.5-flash`) and Gemini CLI (bare `gemini-3.5-flash`). Flash exposes `minimal`/`low`/`medium`/`high` thinking levels. Rollout-dependent.
 
 ### Changed
