@@ -1201,3 +1201,30 @@ describe("isRemovedModelId", () => {
     }
   });
 });
+
+describe("Gemini 3.7 Flash model surface", () => {
+  it("does not filter out the Gemini 3.7 Flash ids", async () => {
+    const { __testExports } = await import("./plugin");
+    for (const id of [
+      "gemini-3.7-flash",
+      "antigravity-gemini-3.7-flash",
+      "antigravity-gemini-3.7-flash-high",
+      "gemini-3.7-flash-medium",
+    ]) {
+      expect(__testExports.isRemovedModelId(id), `id=${id}`).toBe(false);
+    }
+  });
+
+  it("advertises video and audio input for 3.7 Flash", async () => {
+    const { __testExports } = await import("./plugin");
+    const { OPENCODE_MODEL_DEFINITIONS } = await import("./plugin/config/models");
+
+    const capabilities = __testExports.modalitiesToCapabilities(
+      OPENCODE_MODEL_DEFINITIONS["antigravity-gemini-3.7-flash"]!,
+      undefined,
+    ) as { input: Record<string, boolean> };
+
+    expect(capabilities.input.video).toBe(true);
+    expect(capabilities.input.audio).toBe(true);
+  });
+});

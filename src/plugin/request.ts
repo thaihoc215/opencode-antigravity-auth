@@ -68,6 +68,7 @@ import {
 import {
   resolveModelForHeaderStyle,
   resolveAntigravityGeminiFlashBackendModel,
+  restoreGeminiMaxOutputTokens,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -1381,6 +1382,10 @@ export function prepareAntigravityRequest(
             effectiveModel,
             tierThinkingLevel,
           );
+          restoreGeminiMaxOutputTokens(
+            req as Record<string, unknown>,
+            effectiveModel,
+          );
 
           if (isClaude) {
             // Steps 0-2: cross-model strip, thinking-block filtering, cache_control,
@@ -1673,6 +1678,10 @@ export function prepareAntigravityRequest(
         }
         delete requestPayload.thinkingConfig;
         delete requestPayload.thinking;
+
+        // After generationConfig has settled, lift OpenCode.s 32000 ceiling
+        // back to the model.s real limit.
+        restoreGeminiMaxOutputTokens(requestPayload, effectiveModel);
 
         if ("system_instruction" in requestPayload) {
           requestPayload.systemInstruction = requestPayload.system_instruction;
@@ -2638,6 +2647,7 @@ export const __testExports = {
   ensureThinkingBeforeToolUseInContents,
   ensureThinkingBeforeToolUseInMessages,
   sanitizeRequestPayloadForAntigravity,
+  restoreGeminiMaxOutputTokens,
   signatureCacheProjectKey,
   generateSyntheticProjectId,
   getDisplayedThinkingHashes,

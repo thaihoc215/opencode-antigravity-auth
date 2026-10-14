@@ -1696,3 +1696,141 @@ describe("getDisplayedThinkingHashes (per-session dedup scoping)", () => {
     expect(refetched!.has("marker")).toBe(false);
   });
 });
+
+describe("Gemini 3.7 Flash request pipeline", () => {
+  const mockAccessToken = "test-token";
+  const mockProjectId = "test-project";
+
+  const bodyFor = async (model: string, generationConfig: Record<string, unknown>) => {
+    const request = new Request(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          generationConfig,
+        }),
+      },
+    );
+    const result = await prepareAntigravityRequest(
+      request,
+      undefined,
+      mockAccessToken,
+      mockProjectId,
+    );
+    return JSON.parse(String(result.init.body));
+  };
+
+  // Probed 2026-09-05 against v1internal:generateContent: gemini-3.7-flash-high
+  // returns 200 for a payload carrying temperature/topP/topK, with a normal
+  // candidate and modelVersion "gemini-3.7-flash". Google's docs say only to
+  // keep temperature at its 1.0 default, never that the fields were removed —
+  // so the pipeline must forward them untouched, exactly like 3.6.
+  it.each(["antigravity-gemini-3.7-flash-high", "antigravity-gemini-3.6-flash-high"])(
+    "forwards temperature/topP/topK unchanged for %s",
+    async (model) => {
+      const body = await bodyFor(model, {
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 1024,
+      });
+
+      const sent = body.request?.generationConfig ?? body.generationConfig ?? {};
+      expect(sent.temperature).toBe(0.7);
+      expect(sent.topP).toBe(0.95);
+      expect(sent.topK).toBe(40);
+      expect(sent.maxOutputTokens).toBe(1024);
+    },
+  );
+});
+
+describe("restoreGeminiMaxOutputTokens", () => {
+  const { restoreGeminiMaxOutputTokens } = __testExports as {
+    restoreGeminiMaxOutputTokens: (
+      payload: Record<string, unknown>,
+      model: string,
+    ) => void;
+  };
+
+  it("restores the model's real limit when OpenCode's global cap is present", () => {
+    // OpenCode computes maxOutputTokens as Math.min(limit.output, 32000), so a
+    // 3.7 Flash request arrives capped at 32000 despite a 65536 limit.
+    const payload = { generationConfig: { maxOutputTokens: 32000, temperature: 0.5 } };
+    restoreGeminiMaxOutputTokens(payload, "gemini-3.7-flash-high");
+    expect(payload.generationConfig).toEqual({
+      maxOutputTokens: 65536,
+      temperature: 0.5,
+    });
+  });
+
+  it("uses the Pro line's 65535 rather than a single hardcoded number", () => {
+    const payload = { generationConfig: { maxOutputTokens: 32000 } };
+    restoreGeminiMaxOutputTokens(payload, "gemini-3.1-pro-high");
+    expect(payload.generationConfig).toEqual({ maxOutputTokens: 65535 });
+  });
+
+  it("leaves a deliberately smaller budget alone", () => {
+    // Only the exact cap is treated as OpenCode's doing; a caller asking for a
+    // short response must keep it.
+    const payload = { generationConfig: { maxOutputTokens: 512 } };
+    restoreGeminiMaxOutputTokens(payload, "gemini-3.7-flash-high");
+    expect(payload.generationConfig).toEqual({ maxOutputTokens: 512 });
+  });
+
+  it("leaves a value at or above the limit alone", () => {
+    const payload = { generationConfig: { maxOutputTokens: 65536 } };
+    restoreGeminiMaxOutputTokens(payload, "gemini-3.7-flash-high");
+    expect(payload.generationConfig).toEqual({ maxOutputTokens: 65536 });
+  });
+
+  it("does not touch Claude models, which have their own thinking-aware path", () => {
+    const payload = { generationConfig: { maxOutputTokens: 32000 } };
+    restoreGeminiMaxOutputTokens(payload, "claude-sonnet-4-6");
+    expect(payload.generationConfig).toEqual({ maxOutputTokens: 32000 });
+  });
+
+  it("does not touch image models, which report no output limit", () => {
+    const payload = { generationConfig: { maxOutputTokens: 32000 } };
+    restoreGeminiMaxOutputTokens(payload, "gemini-3.1-flash-image");
+    expect(payload.generationConfig).toEqual({ maxOutputTokens: 32000 });
+  });
+
+  it("does nothing when there is no generationConfig", () => {
+    const payload: Record<string, unknown> = { contents: [] };
+    expect(() => restoreGeminiMaxOutputTokens(payload, "gemini-3.7-flash-high")).not.toThrow();
+    expect(payload).toEqual({ contents: [] });
+  });
+});
+
+describe("Gemini output budget in the request pipeline", () => {
+  const bodyFor = async (model: string, generationConfig: Record<string, unknown>) => {
+    const request = new Request(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          generationConfig,
+        }),
+      },
+    );
+    const result = await prepareAntigravityRequest(request, undefined, "t", "p");
+    const parsed = JSON.parse(String(result.init.body));
+    return parsed.request?.generationConfig ?? parsed.generationConfig ?? {};
+  };
+
+  it("sends 65536 for 3.7 Flash instead of OpenCode's 32000 cap", async () => {
+    const sent = await bodyFor("antigravity-gemini-3.7-flash-high", {
+      maxOutputTokens: 32000,
+    });
+    expect(sent.maxOutputTokens).toBe(65536);
+  });
+
+  it("lifts the cap for 3.6 Flash too", async () => {
+    const sent = await bodyFor("antigravity-gemini-3.6-flash-high", {
+      maxOutputTokens: 32000,
+    });
+    expect(sent.maxOutputTokens).toBe(65536);
+  });
+});

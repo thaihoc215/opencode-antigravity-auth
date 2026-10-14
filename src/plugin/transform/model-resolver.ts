@@ -67,9 +67,45 @@ const GEMINI_35_FLASH_REGEX =
   /^gemini-3\.5-flash(?:-(minimal|low|medium|high))?$/i;
 const GEMINI_35_FLASH_LOW_MODEL = "gemini-3.5-flash-low";
 const GEMINI_35_FLASH_HIGH_MODEL = "gemini-3-flash-agent";
-const GEMINI_36_FLASH_REGEX =
-  /^gemini-3\.6-flash(?:-(minimal|low|medium|high))?$/i;
-const GEMINI_36_FLASH_BASE_MODEL = "gemini-3.6-flash";
+/**
+ * Flash generations that carry the effort level in the Antigravity backend id
+ * itself (`gemini-3.6-flash-medium`, `gemini-3.7-flash-high`, ...), unlike the
+ * irregular 3.5 mapping above where low and medium share one id and high is
+ * `gemini-3-flash-agent`.
+ *
+ * `defaultLevel` is what an id with no tier suffix resolves to. These are this
+ * plugin's choices, not Google's: Google documents `medium` as the default for
+ * both generations, while 3.6 resolves to `low` here and 3.7 to `high`.
+ *
+ * The Antigravity catalog serves no `-minimal` id for these generations, so a
+ * requested `minimal` folds down to `low` — see `normalizeNoMinimalFlashTier`.
+ */
+const EFFORT_IN_ID_FLASH_GENERATIONS = [
+  {
+    regex: /^gemini-3\.6-flash(?:-(minimal|low|medium|high))?$/i,
+    baseModel: "gemini-3.6-flash",
+    defaultLevel: "low",
+  },
+  {
+    regex: /^gemini-3\.7-flash(?:-(minimal|low|medium|high))?$/i,
+    baseModel: "gemini-3.7-flash",
+    // Deliberate deviation from Google's documented `medium`: an untiered 3.7
+    // selection gets maximum thinking. That costs more per request than the
+    // `low` default every other Gemini entry here uses — chosen knowingly.
+    defaultLevel: "high",
+  },
+] as const;
+
+function matchEffortInIdFlash(model: string) {
+  const modelWithoutQuota = model.replace(QUOTA_PREFIX_REGEX, "");
+  for (const generation of EFFORT_IN_ID_FLASH_GENERATIONS) {
+    const match = modelWithoutQuota.match(generation.regex);
+    if (match) {
+      return { generation, suffix: match[1] };
+    }
+  }
+  return undefined;
+}
 /**
  * Dotted-minor Gemini generations (gemini-3.1, gemini-3.5, ...) use BARE model
  * names on the Gemini CLI backend, unlike the legacy 3.0 line (gemini-3-pro) which
@@ -164,26 +200,30 @@ export function resolveAntigravityGemini35FlashBackendModel(
 }
 
 /**
- * Gemini 3.6 Flash carries the effort level in the backend id itself
- * (`gemini-3.6-flash-low` / `-medium` / `-high`), unlike the irregular 3.5 Flash
- * mapping above where low and medium share one id and high is `gemini-3-flash-agent`.
+ * Resolves the Antigravity backend id for the Flash generations that carry the
+ * effort level in the id itself (3.6, 3.7 — see
+ * `EFFORT_IN_ID_FLASH_GENERATIONS`), or `undefined` for anything else.
  *
  * Already-resolved ids round-trip unchanged, so calling this on the output of a
  * previous call is a no-op.
  */
-export function resolveAntigravityGemini36FlashBackendModel(
+export function resolveAntigravityEffortInIdFlashBackendModel(
   model: string,
   thinkingLevel?: string,
 ): string | undefined {
-  const modelWithoutQuota = model.replace(QUOTA_PREFIX_REGEX, "");
-  const match = modelWithoutQuota.match(GEMINI_36_FLASH_REGEX);
-  if (!match) {
+  const matched = matchEffortInIdFlash(model);
+  if (!matched) {
     return undefined;
   }
 
-  const level = (thinkingLevel ?? match[1] ?? "low").toLowerCase();
+  const { generation, suffix } = matched;
+  const level = (
+    thinkingLevel ??
+    suffix ??
+    generation.defaultLevel
+  ).toLowerCase();
   const effort = level === "high" || level === "medium" ? level : "low";
-  return `${GEMINI_36_FLASH_BASE_MODEL}-${effort}`;
+  return `${generation.baseModel}-${effort}`;
 }
 
 /**
@@ -200,16 +240,118 @@ export function resolveAntigravityGeminiFlashBackendModel(
 ): string | undefined {
   return (
     resolveAntigravityGemini35FlashBackendModel(model, thinkingLevel) ??
-    resolveAntigravityGemini36FlashBackendModel(model, thinkingLevel)
+    resolveAntigravityEffortInIdFlashBackendModel(model, thinkingLevel)
   );
 }
 
 /**
- * Gemini 3.6 Flash serves only low/medium/high, while 3.5 Flash also serves
- * `minimal`. A `minimal` request against 3.6 is folded to `low` so that neither
- * the backend id nor the `thinkingLevel` parameter carries a level 3.6 rejects.
+ * OpenCode's global output-token ceiling. It computes every request's budget as
+ * `Math.min(model.limit.output, OUTPUT_TOKEN_MAX)` with `OUTPUT_TOKEN_MAX =
+ * 32000`, so a model declaring 65536 still arrives here capped at 32000 and
+ * raising the declared limit has no effect.
+ *
+ * Requests carrying exactly this value are therefore OpenCode's doing, not a
+ * caller's deliberate choice — the distinction `restoreGeminiMaxOutputTokens`
+ * relies on. `transform/claude.ts` already works around the same ceiling for
+ * Claude thinking models.
  */
-function normalizeGemini36FlashTier(
+export const OPENCODE_OUTPUT_TOKEN_CAP = 32000;
+
+/**
+ * Real per-model output-token limits, as reported by the Antigravity catalog
+ * (`v1internal:fetchAvailableModels` → `maxOutputTokens`), read 2026-08-17.
+ * They are NOT uniform: the Gemini 3 Flash line reports 65536 while the Pro
+ * line, 3.1 Flash Lite and the whole 2.5 family report 65535 — so this is a
+ * table of observed values, not a single constant.
+ *
+ * Order matters: the first matching entry wins, so narrower ids come first.
+ */
+const GEMINI_OUTPUT_TOKEN_LIMITS: ReadonlyArray<{
+  regex: RegExp;
+  maxOutputTokens: number;
+}> = [
+  { regex: /^gemini-3\.1-flash-lite/i, maxOutputTokens: 65535 },
+  { regex: /^gemini-3(?:\.\d+)?-flash/i, maxOutputTokens: 65536 },
+  { regex: /^gemini-3(?:\.\d+)?-pro/i, maxOutputTokens: 65535 },
+  { regex: /^gemini-pro-agent$/i, maxOutputTokens: 65535 },
+  { regex: /^gemini-2\.5-/i, maxOutputTokens: 65535 },
+];
+
+/**
+ * The output-token limit the backend advertises for a Gemini model, or
+ * `undefined` for non-Gemini and image models (the catalog reports no limit for
+ * image ids, and they do not take an output budget).
+ */
+export function geminiMaxOutputTokens(model: string): number | undefined {
+  const bare = model.replace(QUOTA_PREFIX_REGEX, "");
+  if (IMAGE_GENERATION_MODELS.test(bare)) {
+    return undefined;
+  }
+  return GEMINI_OUTPUT_TOKEN_LIMITS.find((entry) => entry.regex.test(bare))
+    ?.maxOutputTokens;
+}
+
+/**
+ * Restores a Gemini request's output budget to what the model actually allows.
+ *
+ * OpenCode caps every request at `Math.min(model.limit.output, 32000)`, so
+ * Gemini models that permit 65536/65535 are asked for barely half of it and
+ * long responses truncate early. Declaring a higher `limit.output` cannot fix
+ * this — the cap is a `Math.min` on OpenCode's side.
+ *
+ * Only a budget equal to the cap is rewritten. Note the one false positive that
+ * implies: a caller who deliberately asks for exactly 32000 is indistinguishable
+ * from OpenCode's ceiling and gets raised too. Any other value is left alone.
+ *
+ * Accepts either spelling of the key — `max_output_tokens` reaches
+ * `generationConfig` too — and collapses to the camelCase one so the payload
+ * never carries two conflicting budgets.
+ *
+ * Lives here rather than in `request.ts` because both request pipelines need it:
+ * the Antigravity path and the api-key/`agy-sdk` public-API fallback.
+ */
+export function restoreGeminiMaxOutputTokens(
+  requestPayload: Record<string, unknown>,
+  effectiveModel: string,
+): void {
+  const limit = geminiMaxOutputTokens(effectiveModel);
+  if (limit === undefined) {
+    return;
+  }
+
+  const generationConfig = requestPayload.generationConfig;
+  if (!generationConfig || typeof generationConfig !== "object") {
+    return;
+  }
+
+  const config = generationConfig as Record<string, unknown>;
+  const current = config.maxOutputTokens ?? config.max_output_tokens;
+  if (current === OPENCODE_OUTPUT_TOKEN_CAP) {
+    config.maxOutputTokens = limit;
+    delete config.max_output_tokens;
+  }
+}
+
+/**
+ * The thinkingLevel a Gemini 3 model runs at when the request names no tier.
+ * `low` for everything except the effort-in-id Flash generations, which carry
+ * their own `defaultLevel` — 3.6 Flash `low`, 3.7 Flash `high`.
+ */
+function defaultGemini3ThinkingLevel(model: string): string {
+  const matched = matchEffortInIdFlash(model);
+  if (!matched) {
+    return "low";
+  }
+  return (matched.suffix ?? matched.generation.defaultLevel).toLowerCase();
+}
+
+/**
+ * Gemini 3.6 and 3.7 Flash serve only low/medium/high, while 3.5 Flash also
+ * serves `minimal`. A `minimal` request against those generations is folded to
+ * `low` so that neither the backend id nor the `thinkingLevel` parameter carries
+ * a level the backend rejects.
+ */
+function normalizeNoMinimalFlashTier(
   model: string,
   tier: ThinkingTier | undefined,
 ): ThinkingTier | undefined {
@@ -220,7 +362,7 @@ function normalizeGemini36FlashTier(
   if (!/-minimal$/i.test(bare)) {
     return tier;
   }
-  return GEMINI_36_FLASH_REGEX.test(bare) ? "low" : tier;
+  return matchEffortInIdFlash(bare) ? "low" : tier;
 }
 
 /**
@@ -251,7 +393,7 @@ export function resolveModelWithTier(
   const modelWithoutQuota = requestedModel.replace(QUOTA_PREFIX_REGEX, "");
 
   const requestedTier = extractThinkingTierFromModel(modelWithoutQuota);
-  const tier = normalizeGemini36FlashTier(modelWithoutQuota, requestedTier);
+  const tier = normalizeNoMinimalFlashTier(modelWithoutQuota, requestedTier);
   const baseName = requestedTier
     ? modelWithoutQuota.replace(TIER_REGEX, "")
     : modelWithoutQuota;
@@ -284,14 +426,12 @@ export function resolveModelWithTier(
 
   let antigravityModel = modelWithoutQuota;
   if (skipAlias) {
-    const gemini35FlashBackendModel =
-      resolveAntigravityGemini35FlashBackendModel(modelWithoutQuota, tier);
-    const gemini36FlashBackendModel =
-      resolveAntigravityGemini36FlashBackendModel(modelWithoutQuota, tier);
-    if (gemini35FlashBackendModel) {
-      antigravityModel = gemini35FlashBackendModel;
-    } else if (gemini36FlashBackendModel) {
-      antigravityModel = gemini36FlashBackendModel;
+    const flashBackendModel = resolveAntigravityGeminiFlashBackendModel(
+      modelWithoutQuota,
+      tier,
+    );
+    if (flashBackendModel) {
+      antigravityModel = flashBackendModel;
     } else if (isGemini3Pro && !tier && !isImageModel) {
       antigravityModel = `${modelWithoutQuota}-low`;
     } else if (isGemini3Flash && tier) {
@@ -329,7 +469,7 @@ export function resolveModelWithTier(
     if (isEffectiveGemini3) {
       return {
         actualModel: resolvedModel,
-        thinkingLevel: "low",
+        thinkingLevel: defaultGemini3ThinkingLevel(resolvedModel),
         isThinkingModel: true,
         quotaPreference,
         explicitQuota,

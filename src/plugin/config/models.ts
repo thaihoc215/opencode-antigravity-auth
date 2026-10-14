@@ -16,7 +16,7 @@ export interface ModelLimit {
   output: number;
 }
 
-export type ModelModality = "text" | "image" | "pdf";
+export type ModelModality = "text" | "image" | "pdf" | "video" | "audio";
 
 export interface ModelModalities {
   input: ModelModality[];
@@ -53,6 +53,26 @@ const DEFAULT_MODALITIES: ModelModalities = {
   output: ["text"],
 };
 
+/**
+ * Gemini 3.7 Flash documents Text/Image/Video/Audio/PDF input — wider than
+ * DEFAULT_MODALITIES. The Antigravity catalog agrees: its Flash entries carry
+ * `supportsVideo: true` and audio mime types in `supportedMimeTypes`.
+ *
+ * Built fresh per model entry rather than shared: `normalizeProviderHookModels`
+ * shallow-copies these objects into the provider payload, so two entries sharing
+ * one `input` array would alias each other for any consumer that mutates it.
+ */
+const flash37Modalities = (): ModelModalities => ({
+  input: ["text", "image", "pdf", "video", "audio"],
+  output: ["text"],
+});
+
+const flash37Variants = (): Record<string, ModelVariant> => ({
+  low: { thinkingLevel: "low" },
+  medium: { thinkingLevel: "medium" },
+  high: { thinkingLevel: "high" },
+});
+
 export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
   "antigravity-gemini-3.1-pro": {
     name: "Gemini 3.1 Pro (Antigravity)",
@@ -85,6 +105,13 @@ export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       high: { thinkingLevel: "high" },
     },
   },
+  // Gemini 3.7 Flash serves low/medium/high only — same tier set as 3.6.
+  "antigravity-gemini-3.7-flash": {
+    name: "Gemini 3.7 Flash (Antigravity)",
+    limit: { context: 1048576, output: 65536 },
+    modalities: flash37Modalities(),
+    variants: flash37Variants(),
+  },
   "antigravity-claude-sonnet-4-6": {
     name: "Claude Sonnet 4.6 (Antigravity)",
     limit: { context: 200000, output: 64000 },
@@ -113,6 +140,12 @@ export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       medium: { thinkingLevel: "medium" },
       high: { thinkingLevel: "high" },
     },
+  },
+  "gemini-3.7-flash": {
+    name: "Gemini 3.7 Flash (Gemini CLI)",
+    limit: { context: 1048576, output: 65536 },
+    modalities: flash37Modalities(),
+    variants: flash37Variants(),
   },
   "gemini-3.1-pro": {
     name: "Gemini 3.1 Pro (Gemini CLI)",
