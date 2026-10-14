@@ -771,4 +771,19 @@ describe("geminiMaxOutputTokens", () => {
       expect(geminiMaxOutputTokens(model), `model=${model}`).toBeUndefined();
     }
   });
+
+  // The regex table and OPENCODE_MODEL_DEFINITIONS both encode per-model output
+  // limits. They are separate on purpose — the table also covers backend-only
+  // ids like gemini-3-flash-agent that have no OpenCode entry — but where both
+  // describe the same model they must agree, or the plugin asks the backend for
+  // a budget it never declared.
+  it("agrees with every Gemini limit declared in OPENCODE_MODEL_DEFINITIONS", async () => {
+    const { OPENCODE_MODEL_DEFINITIONS } = await import("../config/models");
+
+    for (const [id, definition] of Object.entries(OPENCODE_MODEL_DEFINITIONS)) {
+      const fromTable = geminiMaxOutputTokens(id);
+      if (fromTable === undefined) continue; // non-Gemini or image model
+      expect(fromTable, `model=${id}`).toBe(definition.limit.output);
+    }
+  });
 });

@@ -1215,34 +1215,6 @@ describe("Gemini 3.7 Flash model surface", () => {
     }
   });
 
-  it("advertises no temperature support for 3.7 Flash", async () => {
-    // 3.7 removed the sampling params; advertising temperature invites OpenCode
-    // to send a value the API rejects.
-    const { __testExports } = await import("./plugin");
-    const { OPENCODE_MODEL_DEFINITIONS } = await import("./plugin/config/models");
-
-    const capabilities = __testExports.modalitiesToCapabilities(
-      OPENCODE_MODEL_DEFINITIONS["antigravity-gemini-3.7-flash"]!,
-      undefined,
-      "antigravity-gemini-3.7-flash",
-    );
-
-    expect(capabilities.temperature).toBe(false);
-  });
-
-  it("keeps temperature support for 3.6 Flash", async () => {
-    const { __testExports } = await import("./plugin");
-    const { OPENCODE_MODEL_DEFINITIONS } = await import("./plugin/config/models");
-
-    const capabilities = __testExports.modalitiesToCapabilities(
-      OPENCODE_MODEL_DEFINITIONS["antigravity-gemini-3.6-flash"]!,
-      undefined,
-      "antigravity-gemini-3.6-flash",
-    );
-
-    expect(capabilities.temperature).toBe(true);
-  });
-
   it("advertises video and audio input for 3.7 Flash", async () => {
     const { __testExports } = await import("./plugin");
     const { OPENCODE_MODEL_DEFINITIONS } = await import("./plugin/config/models");
@@ -1250,7 +1222,6 @@ describe("Gemini 3.7 Flash model surface", () => {
     const capabilities = __testExports.modalitiesToCapabilities(
       OPENCODE_MODEL_DEFINITIONS["antigravity-gemini-3.7-flash"]!,
       undefined,
-      "antigravity-gemini-3.7-flash",
     ) as { input: Record<string, boolean> };
 
     expect(capabilities.input.video).toBe(true);

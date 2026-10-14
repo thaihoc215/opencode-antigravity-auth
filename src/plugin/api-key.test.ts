@@ -692,4 +692,42 @@ describe("Gemini 3.7 Flash public-API routing", () => {
   it("does not treat gemini-3.7-flash as Antigravity-only", () => {
     expect(isLikelyAntigravityOnlyModel("gemini-3.7-flash")).toBe(false);
   });
+
+  // OpenCode applies its 32000 ceiling before either pipeline sees the request,
+  // so the public-API fallback needs the same lift the Antigravity path gets —
+  // otherwise long responses truncate at half the model's real budget whenever
+  // OAuth quota is exhausted and this route takes over.
+  it("lifts OpenCode's 32000 output cap on the public-API fallback path", async () => {
+    const prepared = await prepareAgySdkGeminiRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          generationConfig: { maxOutputTokens: 32000 },
+        }),
+      },
+      { label: "environment", apiKey: "test-key" },
+    );
+
+    const body = JSON.parse(String(prepared!.init.body));
+    expect(body.generationConfig.maxOutputTokens).toBe(65536);
+  });
+
+  it("leaves a deliberately smaller budget alone on the fallback path", async () => {
+    const prepared = await prepareAgySdkGeminiRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          generationConfig: { maxOutputTokens: 512 },
+        }),
+      },
+      { label: "environment", apiKey: "test-key" },
+    );
+
+    const body = JSON.parse(String(prepared!.init.body));
+    expect(body.generationConfig.maxOutputTokens).toBe(512);
+  });
 });

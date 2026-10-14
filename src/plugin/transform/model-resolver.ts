@@ -73,28 +73,26 @@ const GEMINI_35_FLASH_HIGH_MODEL = "gemini-3-flash-agent";
  * irregular 3.5 mapping above where low and medium share one id and high is
  * `gemini-3-flash-agent`.
  *
- * `defaultLevel` is what an id with no tier suffix resolves to: Google documents
- * 3.7 Flash as defaulting to `medium`, while 3.6 defaults to `low` here.
+ * `defaultLevel` is what an id with no tier suffix resolves to. These are this
+ * plugin's choices, not Google's: Google documents `medium` as the default for
+ * both generations, while 3.6 resolves to `low` here and 3.7 to `high`.
  *
- * None of these generations serve `minimal`, so a requested `minimal` is folded
- * down to `low` — see `normalizeNoMinimalFlashTier`.
+ * The Antigravity catalog serves no `-minimal` id for these generations, so a
+ * requested `minimal` folds down to `low` — see `normalizeNoMinimalFlashTier`.
  */
 const EFFORT_IN_ID_FLASH_GENERATIONS = [
   {
     regex: /^gemini-3\.6-flash(?:-(minimal|low|medium|high))?$/i,
     baseModel: "gemini-3.6-flash",
     defaultLevel: "low",
-    // 3.6 deprecated temperature/topP/topK but still accepts them.
-    dropsSamplingParams: false,
   },
   {
     regex: /^gemini-3\.7-flash(?:-(minimal|low|medium|high))?$/i,
     baseModel: "gemini-3.7-flash",
-    // Google documents `medium` as 3.7's own default; this plugin ships `high`
-    // so an untiered selection gets maximum thinking, per its own convention.
+    // Deliberate deviation from Google's documented `medium`: an untiered 3.7
+    // selection gets maximum thinking. That costs more per request than the
+    // `low` default every other Gemini entry here uses — chosen knowingly.
     defaultLevel: "high",
-    // 3.7 removed them outright — sending any of the three is a 400.
-    dropsSamplingParams: true,
   },
 ] as const;
 
@@ -247,12 +245,6 @@ export function resolveAntigravityGeminiFlashBackendModel(
 }
 
 /**
- * Gemini 3.6 and 3.7 Flash serve only low/medium/high, while 3.5 Flash also
- * serves `minimal`. A `minimal` request against those generations is folded to
- * `low` so that neither the backend id nor the `thinkingLevel` parameter carries
- * a level the backend rejects.
- */
-/**
  * OpenCode's global output-token ceiling. It computes every request's budget as
  * `Math.min(model.limit.output, OUTPUT_TOKEN_MAX)` with `OUTPUT_TOKEN_MAX =
  * 32000`, so a model declaring 65536 still arrives here capped at 32000 and
@@ -300,30 +292,50 @@ export function geminiMaxOutputTokens(model: string): number | undefined {
 }
 
 /**
- * Sampling parameters Gemini 3.7+ no longer accepts. Kept next to the model
- * table so the two stay in step.
+ * Restores a Gemini request's output budget to what the model actually allows.
+ *
+ * OpenCode caps every request at `Math.min(model.limit.output, 32000)`, so
+ * Gemini models that permit 65536/65535 are asked for barely half of it and
+ * long responses truncate early. Declaring a higher `limit.output` cannot fix
+ * this — the cap is a `Math.min` on OpenCode's side.
+ *
+ * Only a budget equal to the cap is rewritten. Note the one false positive that
+ * implies: a caller who deliberately asks for exactly 32000 is indistinguishable
+ * from OpenCode's ceiling and gets raised too. Any other value is left alone.
+ *
+ * Accepts either spelling of the key — `max_output_tokens` reaches
+ * `generationConfig` too — and collapses to the camelCase one so the payload
+ * never carries two conflicting budgets.
+ *
+ * Lives here rather than in `request.ts` because both request pipelines need it:
+ * the Antigravity path and the api-key/`agy-sdk` public-API fallback.
  */
-export const REMOVED_SAMPLING_PARAMS = [
-  "temperature",
-  "topP",
-  "topK",
-  "top_p",
-  "top_k",
-] as const;
+export function restoreGeminiMaxOutputTokens(
+  requestPayload: Record<string, unknown>,
+  effectiveModel: string,
+): void {
+  const limit = geminiMaxOutputTokens(effectiveModel);
+  if (limit === undefined) {
+    return;
+  }
 
-/**
- * True when the model rejects `temperature`/`topP`/`topK` outright rather than
- * merely deprecating them. Gemini 3.7 Flash removed all three; 3.6 and earlier
- * still accept them.
- */
-export function modelDropsSamplingParams(model: string): boolean {
-  return matchEffortInIdFlash(model)?.generation.dropsSamplingParams === true;
+  const generationConfig = requestPayload.generationConfig;
+  if (!generationConfig || typeof generationConfig !== "object") {
+    return;
+  }
+
+  const config = generationConfig as Record<string, unknown>;
+  const current = config.maxOutputTokens ?? config.max_output_tokens;
+  if (current === OPENCODE_OUTPUT_TOKEN_CAP) {
+    config.maxOutputTokens = limit;
+    delete config.max_output_tokens;
+  }
 }
 
 /**
  * The thinkingLevel a Gemini 3 model runs at when the request names no tier.
- * `low` everywhere except the Flash generations that document otherwise — 3.7
- * Flash defaults to `medium`.
+ * `low` for everything except the effort-in-id Flash generations, which carry
+ * their own `defaultLevel` — 3.6 Flash `low`, 3.7 Flash `high`.
  */
 function defaultGemini3ThinkingLevel(model: string): string {
   const matched = matchEffortInIdFlash(model);
@@ -333,6 +345,12 @@ function defaultGemini3ThinkingLevel(model: string): string {
   return (matched.suffix ?? matched.generation.defaultLevel).toLowerCase();
 }
 
+/**
+ * Gemini 3.6 and 3.7 Flash serve only low/medium/high, while 3.5 Flash also
+ * serves `minimal`. A `minimal` request against those generations is folded to
+ * `low` so that neither the backend id nor the `thinkingLevel` parameter carries
+ * a level the backend rejects.
+ */
 function normalizeNoMinimalFlashTier(
   model: string,
   tier: ThinkingTier | undefined,

@@ -1697,67 +1697,6 @@ describe("getDisplayedThinkingHashes (per-session dedup scoping)", () => {
   });
 });
 
-describe("stripUnsupportedSamplingParams", () => {
-  const { stripUnsupportedSamplingParams } = __testExports as {
-    stripUnsupportedSamplingParams: (
-      payload: Record<string, unknown>,
-      model: string,
-    ) => void;
-  };
-
-  it("removes temperature, topP and topK for Gemini 3.7 Flash", () => {
-    // 3.7 removed the deprecated sampling parameters outright; sending them 400s.
-    const payload = {
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 1024,
-      },
-    };
-
-    stripUnsupportedSamplingParams(payload, "gemini-3.7-flash-high");
-
-    expect(payload.generationConfig).toEqual({ maxOutputTokens: 1024 });
-  });
-
-  it("strips them for the bare and Antigravity-prefixed 3.7 ids alike", () => {
-    for (const model of [
-      "gemini-3.7-flash",
-      "antigravity-gemini-3.7-flash",
-      "gemini-3.7-flash-low",
-    ]) {
-      const payload = { generationConfig: { temperature: 1, maxOutputTokens: 8 } };
-      stripUnsupportedSamplingParams(payload, model);
-      expect(payload.generationConfig, `model=${model}`).toEqual({
-        maxOutputTokens: 8,
-      });
-    }
-  });
-
-  it("leaves sampling params alone for models that still accept them", () => {
-    for (const model of ["gemini-3.6-flash-low", "gemini-3.5-flash", "claude-sonnet-4-6"]) {
-      const payload = {
-        generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: 16 },
-      };
-      stripUnsupportedSamplingParams(payload, model);
-      expect(payload.generationConfig, `model=${model}`).toEqual({
-        temperature: 0.7,
-        topP: 0.95,
-        maxOutputTokens: 16,
-      });
-    }
-  });
-
-  it("does nothing when there is no generationConfig", () => {
-    const payload: Record<string, unknown> = { contents: [] };
-    expect(() =>
-      stripUnsupportedSamplingParams(payload, "gemini-3.7-flash"),
-    ).not.toThrow();
-    expect(payload).toEqual({ contents: [] });
-  });
-});
-
 describe("Gemini 3.7 Flash request pipeline", () => {
   const mockAccessToken = "test-token";
   const mockProjectId = "test-project";
@@ -1782,30 +1721,28 @@ describe("Gemini 3.7 Flash request pipeline", () => {
     return JSON.parse(String(result.init.body));
   };
 
-  it("drops temperature/topP/topK before sending a 3.7 Flash request", async () => {
-    const body = await bodyFor("antigravity-gemini-3.7-flash-high", {
-      temperature: 0.7,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 1024,
-    });
+  // Probed 2026-09-05 against v1internal:generateContent: gemini-3.7-flash-high
+  // returns 200 for a payload carrying temperature/topP/topK, with a normal
+  // candidate and modelVersion "gemini-3.7-flash". Google's docs say only to
+  // keep temperature at its 1.0 default, never that the fields were removed —
+  // so the pipeline must forward them untouched, exactly like 3.6.
+  it.each(["antigravity-gemini-3.7-flash-high", "antigravity-gemini-3.6-flash-high"])(
+    "forwards temperature/topP/topK unchanged for %s",
+    async (model) => {
+      const body = await bodyFor(model, {
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 1024,
+      });
 
-    const sent = body.request?.generationConfig ?? body.generationConfig ?? {};
-    expect(sent.temperature).toBeUndefined();
-    expect(sent.topP).toBeUndefined();
-    expect(sent.topK).toBeUndefined();
-    expect(sent.maxOutputTokens).toBe(1024);
-  });
-
-  it("keeps temperature for 3.6 Flash, which still accepts it", async () => {
-    const body = await bodyFor("antigravity-gemini-3.6-flash-high", {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-    });
-
-    const sent = body.request?.generationConfig ?? body.generationConfig ?? {};
-    expect(sent.temperature).toBe(0.7);
-  });
+      const sent = body.request?.generationConfig ?? body.generationConfig ?? {};
+      expect(sent.temperature).toBe(0.7);
+      expect(sent.topP).toBe(0.95);
+      expect(sent.topK).toBe(40);
+      expect(sent.maxOutputTokens).toBe(1024);
+    },
+  );
 });
 
 describe("restoreGeminiMaxOutputTokens", () => {

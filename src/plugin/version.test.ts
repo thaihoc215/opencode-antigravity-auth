@@ -120,6 +120,42 @@ describe("initAntigravityVersion — network failure path", () => {
     expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
   })
 
+  it("retries the changelog when the auto-updater is the stale source", async () => {
+    // The auto-updater is tried first and always serves a pinned value below
+    // the floor. Without this fallthrough the floor short-circuits every
+    // startup, the changelog scrape never runs, and the reported version is
+    // pinned to the hardcoded constant forever — dead fetch chain.
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).includes("changelog")
+        ? { ok: true, text: async () => "Antigravity 9.19.0 release notes" }
+        : { ok: true, text: async () => "Auto updater is running. Fixed Version: 2.0.6" },
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { getAntigravityVersion } = await import("../constants.ts")
+    const { initAntigravityVersion } = await import("./version.ts")
+    await initAntigravityVersion()
+
+    expect(getAntigravityVersion()).toBe("9.19.0")
+  })
+
+  it("still floors when the changelog is also below the floor", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        String(url).includes("changelog")
+          ? { ok: true, text: async () => "Antigravity 2.1.0 release notes" }
+          : { ok: true, text: async () => "Fixed Version: 2.0.6" },
+      ),
+    )
+
+    const { ANTIGRAVITY_VERSION_FALLBACK, getAntigravityVersion } = await import("../constants.ts")
+    const { initAntigravityVersion } = await import("./version.ts")
+    await initAntigravityVersion()
+
+    expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
+  })
+
   it("fallback version appears in User-Agent header", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")))
 

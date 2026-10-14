@@ -83,10 +83,22 @@ export async function initAntigravityVersion(): Promise<void> {
     }
   }
 
-  // Never report older than the hardcoded floor. The auto-updater endpoint
-  // serves a pinned "Fixed Version" that trails the real releases, and the
-  // backend gates its model catalog on the reported version — taking a stale
-  // value verbatim silently hides models the account is entitled to.
+  // The auto-updater endpoint serves a pinned "Fixed Version" that trails the
+  // real releases, and the backend gates its model catalog on the reported
+  // version — taking a stale value verbatim silently hides models the account
+  // is entitled to. When the API is the stale one, retry via the changelog,
+  // which tracks actual releases; otherwise the floor below would pin us to the
+  // hardcoded constant forever and this whole fetch chain would be dead code.
+  if (source === "api" && compareVersions(version, fallback) < 0) {
+    const scraped = await tryFetchVersion(CHANGELOG_URL, CHANGELOG_SCAN_CHARS);
+    if (scraped && compareVersions(scraped, version) > 0) {
+      log.info("version-api-stale", { api: version, changelog: scraped });
+      version = scraped;
+      source = "changelog";
+    }
+  }
+
+  // Never report older than the hardcoded floor.
   if (compareVersions(version, fallback) < 0) {
     log.info("version-floored", { reported: version, source, using: fallback });
     setAntigravityVersion(fallback);

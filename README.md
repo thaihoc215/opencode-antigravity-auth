@@ -203,7 +203,7 @@ If OpenCode still behaves like an older build, see [Behavior doesn't match the v
 | `antigravity-gemini-3-flash` | minimal, low, medium, high | Gemini 3 Flash with thinking |
 | `antigravity-gemini-3.5-flash` | minimal, low, medium, high | Gemini 3.5 Flash with thinking (rollout-dependent) |
 | `antigravity-gemini-3.6-flash` | low, medium, high | Gemini 3.6 Flash with thinking (no `minimal` tier) |
-| `antigravity-gemini-3.7-flash` | low, medium, high | Gemini 3.7 Flash — defaults to `high`, no sampling params; needs client version >= 2.5.2 |
+| `antigravity-gemini-3.7-flash` | low, medium, high | Gemini 3.7 Flash — defaults to `high` (not `low` like its siblings); needs client version >= 2.5.2 |
 | `antigravity-claude-sonnet-4-6` | — | Claude Sonnet 4.6 |
 | `antigravity-claude-opus-4-6-thinking` | low, max | Claude Opus 4.6 with extended thinking |
 

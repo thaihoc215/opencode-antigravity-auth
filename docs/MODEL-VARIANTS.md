@@ -58,8 +58,10 @@ Gemini 3 models use string-based thinking levels. Available levels differ by mod
 | `high` | ✅ | ✅ | ✅ | ✅ | Maximum thinking |
 
 Default when no tier is requested: `low`, except **3.7 Flash, which defaults to
-`high`**. (Google documents `medium` as 3.7's own default; this plugin ships
-`high` so an untiered selection gets maximum thinking.)
+`high`**. This is a deliberate deviation — Google documents `medium` as 3.7's own
+default, and every other model here defaults to `low`. An untiered 3.7 selection
+therefore costs more per request than its siblings; pick `low` or `medium`
+explicitly if that matters to you.
 
 > **Gemini 3.7 requires an Antigravity client version >= 2.5.2.** The backend
 > gates its catalog on the version in the User-Agent — a client reporting an
@@ -88,17 +90,16 @@ The plugin restores the real budget for Gemini before the request leaves:
 Only a budget equal to the cap exactly is rewritten, so setting a deliberately
 small `maxOutputTokens` still works.
 
-### Gemini 3.7 Flash: no sampling parameters
+### Gemini 3.7 Flash: sampling parameters
 
-Gemini 3.7 **removed** `temperature`, `topP` and `topK` — sending any of them is a
-400, not a silently ignored field. (3.6 only deprecated them and still accepts.)
-The plugin handles this in two places, so no configuration is needed:
+`temperature`, `topP` and `topK` are accepted and forwarded unchanged, exactly as
+for 3.6. Probed 2026-09-05 against `v1internal:generateContent`:
+`gemini-3.7-flash-high` returns 200 for a payload carrying all three.
 
-- `temperature` is advertised as unsupported for 3.7 ids, so OpenCode does not offer it.
-- The request pipeline strips all three from `generationConfig` before the request
-  leaves, as a backstop against values arriving from config or a raw request.
-
-Use `thinkingLevel` to control 3.7's behaviour instead.
+Google's guidance is to leave `temperature` at its default of `1.0` for all
+Gemini 3 models — lower values "may lead to unexpected behavior, such as looping
+or degraded performance" — but that is advice, not a rejected field. Prefer
+`thinkingLevel` for controlling 3.7's behaviour.
 
 ### Gemini 3.6 Flash Example
 

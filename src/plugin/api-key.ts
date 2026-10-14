@@ -1,5 +1,5 @@
 import { extractVariantThinkingConfig } from "./request-helpers";
-import { applyGeminiTransforms, isGemini3Model, isImageGenerationModel, mapAntigravityModelToPublicApi, resolveModelForHeaderStyle } from "./transform";
+import { applyGeminiTransforms, isGemini3Model, isImageGenerationModel, mapAntigravityModelToPublicApi, resolveModelForHeaderStyle, restoreGeminiMaxOutputTokens } from "./transform";
 import { getPublicGeminiApiModelIds } from "./model-catalog";
 import type { AntigravityConfig } from "./config";
 import type { GeminiApiModel } from "./config/models";
@@ -534,6 +534,11 @@ function applyAgySdkGeminiBodyTransforms(payload: RequestPayload, model: string,
       googleSearch: variantConfig?.googleSearch,
     });
   }
+
+  // Same 32000 ceiling as the Antigravity path: OpenCode applies it before the
+  // request reaches either pipeline, so the public-API fallback needs the lift
+  // too or long responses truncate at half the model's real budget.
+  restoreGeminiMaxOutputTokens(payload as Record<string, unknown>, model);
 
   delete payload.model;
   delete payload.providerOptions;
